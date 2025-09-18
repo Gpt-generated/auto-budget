@@ -21,6 +21,9 @@ def create_app(test_config: dict | None = None) -> Flask:
 
     db.init_app(app)
 
+    with app.app_context():
+        db.create_all()
+
     from . import routes  # noqa: WPS433  (import inside function for factory pattern)
     app.register_blueprint(routes.bp)
 
