@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy.exc import IntegrityError
 
 from . import db
 from .models import Debt, Expense, Income, Source
@@ -44,9 +45,17 @@ def sources() -> Any:
     if not name or not source_type:
         return jsonify({"error": "name ve type alanları gereklidir"}), 400
 
+    if Source.query.filter(Source.name == name).first():
+        return jsonify({"error": "Bu isimde bir kaynak zaten mevcut"}), 409
+
     new_source = Source(name=name, type=source_type)
     db.session.add(new_source)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Bu isimde bir kaynak zaten mevcut"}), 409
+
     return jsonify(new_source.to_dict()), 201
 
 
@@ -63,9 +72,26 @@ def source_detail(source_id: int) -> Any:
         return "", 204
 
     data = request.get_json(silent=True) or {}
-    source.name = data.get("name", source.name)
-    source.type = data.get("type", source.type)
-    db.session.commit()
+
+    new_name = data.get("name")
+    if new_name and new_name != source.name:
+        duplicate = Source.query.filter(
+            Source.name == new_name,
+            Source.id != source.id,
+        ).first()
+        if duplicate:
+            return jsonify({"error": "Bu isimde bir kaynak zaten mevcut"}), 409
+        source.name = new_name
+
+    if "type" in data:
+        source.type = data["type"]
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Bu isimde bir kaynak zaten mevcut"}), 409
+
     return jsonify(source.to_dict())
 
 
